@@ -60,6 +60,7 @@ function mergeDiary(list){let added=0,noted=0;const nk=t=>String(t).toLowerCase(
   if(wip){if(b.status!=='done')b.status='reading'}else{if(b.status!=='done'||!b.finished)b.finished=d;b.status='done'}
   if(st&&!b.stars)b.stars=st}
  return {added,noted}}
+if(!S.coverReset1){for(const b of S.books)delete b.coverMiss;S.coverReset1=1;save(1)} // 舊版或匯入的備份可能把書標成「找不到」，更新後全部重找一次
 function save(quiet){const cur=JSON.stringify(S);if(!quiet&&lastSaved!==null&&lastSaved!==cur){undoStack.push(lastSaved);if(undoStack.length>30)undoStack.shift()}if(lastSaved!==null)lastSaved=cur;try{localStorage.setItem(KEY,cur)}catch(e){}}
 function undo(){if(!undoStack.length){toast('沒有可以復原的動作',true);return}const prev=undoStack.pop();S=JSON.parse(prev);lastSaved=prev;try{localStorage.setItem(KEY,prev)}catch(e){}
  render();if(!$('bookSheet').hidden){if(S.books.some(b=>b.id===detailId))openDetail(detailId);else $('bookSheet').hidden=true}toast('已復原上一個動作',true)}
@@ -79,7 +80,7 @@ function cover(b){
 
 /* ---------- 自動找封面 ---------- */
 // Google Books 不用金鑰時有流量上限，太快會回 429；遇到就暫停一下再繼續，並改用 Open Library 補找。
-const pending=new Set();const queue=[];let active=0,pausedUntil=0,backoff=20000,coverFound=0;
+const pending=new Set();const queue=[];let active=0,pausedUntil=0,backoff=20000,coverFound=0,coverErr=0;
 function needsCover(b){
  if(b.cover||b.coverManual||b.noLookup||b.cat==='影音')return false;
  if(b.coverMiss&&(Date.now()-b.coverMiss)<COVER_RETRY_DAYS*864e5)return false;
@@ -92,15 +93,24 @@ function enqueueCovers(){
 function pump(){
  const wait=pausedUntil-Date.now();if(wait>0){setTimeout(pump,wait+50);coverStatus();return}
  while(active<2&&queue.length){const id=queue.shift();active++;
-  resolveCover(id).then(r=>{if(r==='limit'){queue.unshift(id);pausedUntil=Date.now()+backoff;backoff=Math.min(backoff*2,300000)}else{pending.delete(id);if(r==='ok'){coverFound++;backoff=20000}}})
+  resolveCover(id).then(r=>{if(r==='limit'){queue.unshift(id);pausedUntil=Date.now()+backoff;backoff=Math.min(backoff*2,300000)}else{pending.delete(id);if(r==='ok'){coverFound++;backoff=20000}if(r==='error'){coverErr++;if(coverErr>=8&&!coverFound){for(const q of queue)pending.delete(q);queue.length=0;render()}}}})
    .catch(()=>pending.delete(id)).finally(()=>{active--;coverStatus();setTimeout(pump,500)})}
 }
 function coverStatus(){const el=document.getElementById('coverStatus');if(!el)return;const n=queue.length+active;
- el.textContent=n?`正在找封面，還有 ${n} 本${pausedUntil>Date.now()?'（查詢太頻繁，稍等一下自動繼續）':''}`:(coverFound?`這次找到 ${coverFound} 本封面`:'')}
+ el.textContent=n?`正在找封面，還有 ${n} 本${pausedUntil>Date.now()?'（查詢太頻繁，稍等一下自動繼續；加上 Google 金鑰會快很多）':''}`:(coverFound?`這次找到 ${coverFound} 本封面`:coverErr?'連不到封面資料庫（Google Books／Open Library），請確認網路，或改用 GitHub 上的網址打開':'')}
+// Google Books 金鑰只存在這個瀏覽器（localStorage），不會寫進程式或上傳到 GitHub
+const GKEY='my-bookshelf-gkey';
+function gKey(){try{return localStorage.getItem(GKEY)||''}catch(e){return ''}}
+function gKeyParam(){const k=gKey();return k?'&key='+encodeURIComponent(k):''}
+function gKeyLabel(){$('gkeyBtn').textContent=gKey()?'Google 金鑰 ✓':'加 Google 金鑰'}
+function setGKey(){const v=prompt('貼上 Google Books API 金鑰（只存在這個瀏覽器）。\n清空後按確定可以刪除金鑰。',gKey());if(v===null)return;
+ try{v.trim()?localStorage.setItem(GKEY,v.trim()):localStorage.removeItem(GKEY)}catch(e){}
+ pausedUntil=0;backoff=20000;coverErr=0;gKeyLabel();
+ for(const b of S.books)delete b.coverMiss;save(1);enqueueCovers();toast(v.trim()?'已存下金鑰，重新找封面':'已刪除金鑰')}
 function httpsify(u){return u?u.replace(/^http:/,'https:'):u}
 class LimitError extends Error{}
 async function googleLookup(q){
- const r=await fetch('https://www.googleapis.com/books/v1/volumes?maxResults=5&q='+encodeURIComponent(q));
+ const r=await fetch('https://www.googleapis.com/books/v1/volumes?maxResults=5&q='+encodeURIComponent(q)+gKeyParam());
  if(r.status===429||r.status===403)throw new LimitError('google '+r.status);
  if(!r.ok)throw new Error('google '+r.status);
  const j=await r.json();
@@ -310,7 +320,7 @@ function mapCat(list){const t=(list||[]).join(' ').toLowerCase();if(!t)return ''
  const rules=[[/comic|graphic novel|manga/,'漫畫輕小說'],[/juvenile/,'親子童書'],[/fiction|poetry|literary|drama/,'文學小說'],[/business|economics/,'財經商管'],[/self-help|religion|body, mind/,'宗教心靈'],[/medical|health|fitness/,'醫藥養生'],[/computer/,'電腦資訊'],[/language|foreign language/,'語言學習'],[/art|music|design|photography|architecture|performing/,'藝術設計'],[/cooking|travel|pets|games|crafts|gardening|house|sports/,'休閒生活'],[/study aids|test/,'考試證照'],[/science|nature|mathematics|technology|psychology/,'科學科普'],[/history|philosophy|social|political|biography|education|law|true crime/,'人文社會']];
  for(const [re,c] of rules)if(re.test(t))return c;return ''}
 async function lookupIsbn(isbn){
- try{const r=await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+isbn);if(r.ok){const j=await r.json();const v=j.items&&j.items[0]&&j.items[0].volumeInfo;
+ try{const r=await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:'+isbn+gKeyParam());if(r.ok){const j=await r.json();const v=j.items&&j.items[0]&&j.items[0].volumeInfo;
   if(v&&v.title){const img=v.imageLinks&&(v.imageLinks.thumbnail||v.imageLinks.smallThumbnail);
    return {title:v.title+(v.subtitle&&/[\u4e00-\u9fff]/.test(v.title)?'：'+v.subtitle:''),author:(v.authors||[]).join('、'),cat:mapCat(v.categories),cover:img?img.replace(/^http:/,'https:').replace('&edge=curl',''):''}}}}catch(e){}
  try{const r=await fetch('https://openlibrary.org/isbn/'+isbn+'.json');if(r.ok){const j=await r.json();if(j.title){const ol=`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`;
@@ -329,4 +339,5 @@ document.addEventListener('submit',async e=>{const f=e.target.closest('[data-isb
  toast(info?`《${b.title}》已加入願望書單`:`查不到這個 ISBN 的書名，先用 ISBN 加入願望書單`);
  const again=document.querySelector('[data-isbnform] input');if(again)again.focus()});
 lastSaved=JSON.stringify(S);
+gKeyLabel();$('gkeyBtn').onclick=setGKey;
 route();enqueueCovers();
