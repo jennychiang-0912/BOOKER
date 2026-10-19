@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>我的書櫃</title>
+<meta name="description" content="我的個人書櫃：在讀、想讀、讀完與願望書單。">
+<link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#DCE9DC">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="css/style.css">
+
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="gut">
+    <a class="logo" href="#top">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="7" width="12" height="19" rx="2" fill="var(--accent)"/><rect x="17" y="7" width="12" height="19" rx="2" fill="var(--mint)" stroke="var(--accent)" stroke-width="1.5"/><path d="M16 9c3-4 7-4 9-3-1 3-4 5-9 5z" fill="var(--accent)"/></svg>
+      我的書櫃
+    </a>
+    <div class="nav-c" id="navc">
+      <ul class="links" id="links">
+        <li><a href="#top" class="on">首頁</a></li>
+        <li><a href="#today">今日任務</a></li>
+        <li><a href="#shelf-reading">在讀</a></li>
+        <li><a href="#shelf-want">即將閱讀</a></li>
+        <li><a href="#shelf-wish">願望書單</a></li>
+        <li><a href="#shelf-done">讀完</a></li>
+      </ul>
+      <div class="nav-r">
+        <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="search" type="search" placeholder="搜尋書名或作者" aria-label="搜尋書名或作者"></label>
+        <a class="icon-btn" href="#shelf-wish" aria-label="願望書單" title="願望書單"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg></a>
+        <button class="btn" id="openAdd">＋ 添一本</button>
+      </div>
+    </div>
+    <button class="icon-btn burger" id="burger" aria-label="開啟選單" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+</nav>
+
+<main id="top">
+  <div class="gut home">
+    <section class="hero">
+      <div class="hero-txt">
+        <div class="date" id="date"></div>
+        <h1>我的書櫃</h1>
+        <div class="stats">
+          <div class="stat"><b class="num" id="sOwned">0</b><span>藏書</span></div>
+          <div class="stat"><b class="num" id="sReading">0</b><span>在讀</span></div>
+          <div class="stat"><b class="num" id="sDone">0</b><span>讀完</span></div>
+          <div class="stat"><b class="num" id="sStreak">0</b><span>連續打卡</span></div>
+        </div>
+      </div>
+      <svg class="hero-art" viewBox="0 40 420 220" aria-hidden="true">
+        <rect x="0" y="226" width="420" height="34" fill="var(--mint)" opacity=".6"/>
+        <!-- book stack -->
+        <rect x="70" y="196" width="150" height="26" rx="3" fill="var(--accent)"/>
+        <rect x="70" y="196" width="10" height="26" fill="var(--ink)" opacity=".15"/>
+        <rect x="84" y="170" width="130" height="26" rx="3" fill="var(--beige)" stroke="var(--line)"/>
+        <rect x="200" y="170" width="6" height="26" fill="var(--accent)" opacity=".7"/>
+        <rect x="64" y="146" width="140" height="24" rx="3" fill="var(--mint)"/>
+        <rect x="80" y="155" width="70" height="5" rx="2.5" fill="var(--card)" opacity=".8"/>
+        <!-- open book on top -->
+        <path d="M90 146c18-12 40-12 58 0v-4c-18-12-40-12-58 0z" fill="var(--ink)" opacity=".15"/>
+        <path d="M92 142c16-14 38-14 56-2l0-30c-18-12-40-12-56 2z" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+        <path d="M148 140c18-12 40-12 56 2v-30c-16-14-38-14-56-2z" fill="var(--card)" stroke="var(--line)" stroke-width="1.5"/>
+        <path d="M104 122c10-6 22-7 34-2M104 130c10-6 22-7 34-2M160 120c12-5 24-4 34 2M160 128c12-5 24-4 34 2" stroke="var(--line)" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <!-- mug -->
+        <rect x="236" y="186" width="44" height="40" rx="8" fill="var(--mug)" stroke="var(--line)" stroke-width="1.5"/>
+        <path d="M280 196c12 0 12 20 0 20" fill="none" stroke="var(--line)" stroke-width="5" stroke-linecap="round"/>
+        <rect x="236" y="198" width="44" height="7" fill="var(--mint)"/>
+        <path d="M250 176c-4-6 4-8 0-14M262 176c-4-6 4-8 0-14" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" fill="none" opacity=".6"/>
+        <!-- plant -->
+        <path d="M312 170h66l-8 56h-50z" fill="var(--pot)"/>
+        <rect x="308" y="164" width="74" height="12" rx="4" fill="var(--pot)" stroke="var(--line)"/>
+        <path d="M345 164c0-30-4-60-2-90" stroke="var(--accent)" stroke-width="3" fill="none"/>
+        <path d="M344 92c-22-6-36-24-34-44 22 2 36 20 34 44z" fill="var(--accent)"/>
+        <path d="M346 104c18-14 40-16 54-6-12 16-36 18-54 6z" fill="var(--mint)" stroke="var(--accent)" stroke-width="1.5"/>
+        <path d="M344 132c-20-2-38 8-46 22 18 6 38-4 46-22z" fill="var(--mint)" stroke="var(--accent)" stroke-width="1.5"/>
+        <path d="M346 140c14-12 34-14 46-6-10 14-30 16-46 6z" fill="var(--accent)" opacity=".85"/>
+        <path d="M343 76c4-18 16-30 30-32 0 16-12 28-30 32z" fill="var(--mint)" stroke="var(--accent)" stroke-width="1.5"/>
+      </svg>
+    </section>
+  </div>
+
+  <div class="gut home" id="today">
+    <div class="sec-h"><h2>今日任務</h2></div>
+    <div class="quick">
+      <button class="qc mint" id="daily" aria-pressed="false">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6c3-2 6-2 9 0v13c-3-2-6-2-9 0z"/><path d="M21 6c-3-2-6-2-9 0v13c3-2 6-2 9 0z"/></svg></span>
+        <span class="t"><small>每日任務</small><b>讀 5 頁</b><span id="dailySub">讀完就打勾，再按一次可以取消</span></span>
+        <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </button>
+      <button class="qc warm" id="checkin" aria-pressed="false">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span>
+        <span class="t"><small>今日讀書打卡</small><b id="checkTitle">還沒打卡</b><span id="checkSub">連續 <strong>0</strong> 天</span></span>
+        <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="gut home" id="shelfTop"></div>
+  <div class="gut" id="listView" hidden></div>
+
+  <div class="gut home" id="shelfRest" style="display:flex;flex-direction:column;gap:30px"></div>
+
+  <div class="gut" style="display:flex;flex-direction:column;gap:20px">
+    <div class="note" id="exampleNote" hidden>
+      <span>目前是範例書，放進自己的書後可以清掉。</span>
+      <button class="more" id="clearExamples">清除範例</button>
+    </div>
+    <div class="foot"><span>資料儲存在這個瀏覽器</span><span class="foot-acts"><button id="exportBtn">匯出備份</button><button id="importBtn" title="可匯入備份檔或日記筆記檔">匯入備份</button><input type="file" id="importFile" accept="application/json,.json" hidden></span></div>
+    <div class="foot" style="border:0;padding:0;font-weight:400"><span>封面資料來源：Google Books、Open Library</span></div>
+  </div>
+</main>
+
+<div class="sheet-bg" id="addSheet" hidden>
+  <form class="sheet" id="addForm">
+    <h2>添一本書</h2>
+    <label>書名<input id="fTitle" required maxlength="80" placeholder="例如：小王子"></label>
+    <label>作者<input id="fAuthor" maxlength="60" placeholder="可不填"></label>
+    <label>ISBN <span class="hint">有填的話封面最準，可不填</span><input id="fIsbn" inputmode="numeric" maxlength="20" placeholder="例如：9789573317241"></label>
+    <label>HyRead 分類<select id="fCat"></select></label>
+    <label>放在哪一層
+      <select id="fStatus"><option value="want">想讀</option><option value="reading">在讀</option><option value="wish">願望（還沒入手）</option><option value="done">讀完</option></select>
+    </label>
+    <div class="acts"><button type="button" class="ghost" id="cancelAdd">取消</button><button type="submit" class="btn">放上書架</button></div>
+  </form>
+</div>
+
+<div class="sheet-bg" id="bookSheet" hidden>
+  <div class="sheet">
+    <div class="detail">
+      <div class="dc" id="dCover"></div>
+      <div class="info">
+        <b id="dTitle"></b>
+        <span id="dAuthor"></span>
+        <div class="dcat"><span class="dcat-v" id="dCat"></span></div>
+        <span class="disbn num" id="dIsbn"></span>
+      </div>
+    </div>
+    <div class="dstars" id="dStarsWrap" hidden><span class="lbl">我的評分</span><div class="stars" id="dStars"></div></div>
+    <div class="dnote" id="dNoteWrap" hidden>
+      <div class="dnote-h"><span>筆記</span><span class="num" id="dNoteDate"></span></div>
+      <textarea id="dNote" placeholder="寫下讀後心得、喜歡的句子…"></textarea>
+    </div>
+    <div class="acts" style="justify-content:space-between">
+      <button class="danger" id="dDelete">從書架移除</button>
+      <button class="btn" id="dClose">完成</button>
+    </div>
+  </div>
+</div>
+<div class="sheet-bg" id="rateSheet" hidden>
+  <div class="sheet rate" role="dialog" aria-labelledby="rHead">
+    <div class="rate-h"><b id="rHead">讀完了！</b><span id="rTitle"></span></div>
+    <div class="stars big" id="rStars"></div>
+    <span class="rate-hint" id="rHint">這本書你給幾顆星？</span>
+    <textarea id="rNote" placeholder="想留下幾句心得嗎？（可以略過）"></textarea>
+    <div class="acts"><button type="button" class="ghost" id="rSkip">之後再說</button><button type="button" class="btn" id="rOk">好</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/data.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

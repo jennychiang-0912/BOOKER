@@ -1,0 +1,10 @@
+# 私人資料：不要上傳到公開 Repository
+*日記筆記*.json
+*書櫃備份*.json
+private/
+
+# 系統與編輯器檔案
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
