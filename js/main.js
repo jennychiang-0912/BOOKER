@@ -79,8 +79,8 @@ function cover(b){
 }
 
 /* ---------- 自動找封面 ---------- */
-// Google Books 不用金鑰時有流量上限，太快會回 429；遇到就暫停一下再繼續，並改用 Open Library 補找。
-const pending=new Set();const queue=[];let active=0,pausedUntil=0,backoff=20000,coverFound=0,coverErr=0;
+// 加速重點：同時查多本、一本書的多個來源同時發出、書名先去掉（英）（漫畫）等標記；中文書不查 Open Library（幾乎沒有中文封面）。
+const pending=new Set();const queue=[];let active=0,pausedUntil=0,backoff=5000,coverFound=0,coverErr=0,keyBad=false;
 function needsCover(b){
  if(b.cover||b.coverManual||b.noLookup||b.cat==='影音')return false;
  if(b.coverMiss&&(Date.now()-b.coverMiss)<COVER_RETRY_DAYS*864e5)return false;
@@ -90,55 +90,78 @@ function enqueueCovers(){
  for(const b of S.books){if(needsCover(b)&&!pending.has(b.id)){pending.add(b.id);queue.push(b.id)}}
  coverStatus();pump();
 }
+function maxActive(){return gKey()&&!keyBad?6:3}
 function pump(){
  const wait=pausedUntil-Date.now();if(wait>0){setTimeout(pump,wait+50);coverStatus();return}
- while(active<2&&queue.length){const id=queue.shift();active++;
-  resolveCover(id).then(r=>{if(r==='limit'){queue.unshift(id);pausedUntil=Date.now()+backoff;backoff=Math.min(backoff*2,300000)}else{pending.delete(id);if(r==='ok'){coverFound++;backoff=20000}if(r==='error'){coverErr++;if(coverErr>=8&&!coverFound){for(const q of queue)pending.delete(q);queue.length=0;render()}}}})
-   .catch(()=>pending.delete(id)).finally(()=>{active--;coverStatus();setTimeout(pump,500)})}
+ while(active<maxActive()&&queue.length){const id=queue.shift();active++;
+  resolveCover(id).then(r=>{if(r==='limit'){queue.push(id);pausedUntil=Date.now()+backoff;backoff=Math.min(backoff*2,60000)}else{pending.delete(id);if(r==='ok'){coverFound++;backoff=5000}if(r==='error'){coverErr++;if(coverErr>=8&&!coverFound){for(const q of queue)pending.delete(q);queue.length=0;render()}}}})
+   .catch(()=>pending.delete(id)).finally(()=>{active--;coverStatus();setTimeout(pump,100)})}
 }
 function coverStatus(){const el=document.getElementById('coverStatus');if(!el)return;const n=queue.length+active;
- el.textContent=n?`正在找封面，還有 ${n} 本${pausedUntil>Date.now()?'（查詢太頻繁，稍等一下自動繼續；加上 Google 金鑰會快很多）':''}`:(coverFound?`這次找到 ${coverFound} 本封面`:coverErr?'連不到封面資料庫（Google Books／Open Library），請確認網路，或改用 GitHub 上的網址打開':'')}
+ const note=keyBad?'（Google 金鑰無效，已改用免金鑰模式，請檢查金鑰）':pausedUntil>Date.now()?(gKey()?'（查詢太頻繁，稍等一下自動繼續）':'（查詢太頻繁，稍等一下自動繼續；加上 Google 金鑰會快很多）'):'';
+ el.textContent=n?`正在找封面，還有 ${n} 本${note}`:(coverFound?`這次找到 ${coverFound} 本封面${keyBad?'（Google 金鑰無效，請檢查）':''}`:coverErr?'連不到封面資料庫（Google Books／Open Library），請確認網路，或改用 GitHub 上的網址打開':keyBad?'Google 金鑰無效，請檢查金鑰':'')}
 // Google Books 金鑰只存在這個瀏覽器（localStorage），不會寫進程式或上傳到 GitHub
 const GKEY='my-bookshelf-gkey';
 function gKey(){try{return localStorage.getItem(GKEY)||''}catch(e){return ''}}
-function gKeyParam(){const k=gKey();return k?'&key='+encodeURIComponent(k):''}
-function gKeyLabel(){$('gkeyBtn').textContent=gKey()?'Google 金鑰 ✓':'加 Google 金鑰'}
+function gKeyParam(){const k=gKey();return k&&!keyBad?'&key='+encodeURIComponent(k):''}
+function gKeyLabel(){$('gkeyBtn').textContent=gKey()?(keyBad?'Google 金鑰 ✗':'Google 金鑰 ✓'):'加 Google 金鑰'}
 function setGKey(){const v=prompt('貼上 Google Books API 金鑰（只存在這個瀏覽器）。\n清空後按確定可以刪除金鑰。',gKey());if(v===null)return;
  try{v.trim()?localStorage.setItem(GKEY,v.trim()):localStorage.removeItem(GKEY)}catch(e){}
- pausedUntil=0;backoff=20000;coverErr=0;gKeyLabel();
+ pausedUntil=0;backoff=5000;coverErr=0;keyBad=false;gKeyLabel();
  for(const b of S.books)delete b.coverMiss;save(1);enqueueCovers();toast(v.trim()?'已存下金鑰，重新找封面':'已刪除金鑰')}
 function httpsify(u){return u?u.replace(/^http:/,'https:'):u}
+const CJK=/[぀-ヿ㐀-鿿]/;
+// 搜尋用書名：去掉（英）（中）（漫畫）、括號、多餘空白
+function searchTitle(t){return String(t).replace(/[（(【\[][^）)】\]]*[）)】\]]/g,' ').replace(/\s+/g,' ').trim()||String(t)}
+const normT=s=>String(s||'').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
 class LimitError extends Error{}
-async function googleLookup(q){
- const r=await fetch('https://www.googleapis.com/books/v1/volumes?maxResults=5&q='+encodeURIComponent(q)+gKeyParam());
- if(r.status===429||r.status===403)throw new LimitError('google '+r.status);
+const GFIELDS='&fields=items(volumeInfo(title,subtitle,authors,imageLinks,industryIdentifiers))';
+async function googleLookup(q,want){
+ const r=await fetch('https://www.googleapis.com/books/v1/volumes?maxResults=10&printType=books&q='+encodeURIComponent(q)+GFIELDS+gKeyParam());
+ if(r.status===400||r.status===403){
+  let msg='';try{msg=JSON.stringify(await r.json())}catch(e){}
+  if(gKey()&&!keyBad&&/key|referer|blocked|disabled|has not been used/i.test(msg)){keyBad=true;gKeyLabel();return googleLookup(q,want)} // 金鑰設定有問題：改用免金鑰再查
+  throw new LimitError('google '+r.status)}
+ if(r.status===429)throw new LimitError('google 429');
  if(!r.ok)throw new Error('google '+r.status);
- const j=await r.json();
- for(const it of (j.items||[])){const v=it.volumeInfo||{};const img=v.imageLinks&&(v.imageLinks.thumbnail||v.imageLinks.smallThumbnail);
-  if(img){const ids=v.industryIdentifiers||[];const id=ids.find(x=>x.type==='ISBN_13')||ids.find(x=>x.type==='ISBN_10');return {url:httpsify(img).replace('&edge=curl',''),authors:v.authors,isbn:id?id.identifier:''}}}
- return null;
+ const j=await r.json();const w=normT(want);
+ const items=(j.items||[]).map(it=>it.volumeInfo||{}).filter(v=>v.imageLinks&&(v.imageLinks.thumbnail||v.imageLinks.smallThumbnail));
+ // 優先選書名對得上的那一本，避免抓到別本書的封面
+ const v=(w&&items.find(v=>{const t=normT(v.title);return t&&(t.includes(w)||w.includes(t))}))||(want?null:items[0]);
+ if(!v)return null;
+ const ids=v.industryIdentifiers||[];const id=ids.find(x=>x.type==='ISBN_13')||ids.find(x=>x.type==='ISBN_10');
+ return {url:httpsify(v.imageLinks.thumbnail||v.imageLinks.smallThumbnail).replace('&edge=curl',''),authors:v.authors,isbn:id?id.identifier:''};
 }
 async function olLookup(title,author){
- const r=await fetch('https://openlibrary.org/search.json?limit=5&fields=cover_i,author_name,isbn&title='+encodeURIComponent(title)+(author?'&author='+encodeURIComponent(author):''));
+ const r=await fetch('https://openlibrary.org/search.json?limit=5&fields=cover_i,author_name,title&title='+encodeURIComponent(title)+(author?'&author='+encodeURIComponent(author):''));
  if(!r.ok)throw new Error('openlibrary '+r.status);
  const j=await r.json();const d=(j.docs||[]).find(x=>x.cover_i);
  return d?{url:`https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg`,authors:d.author_name}:null;
 }
-function probe(url){return new Promise(res=>{const i=new Image();i.referrerPolicy='no-referrer';i.onload=()=>res(i.naturalWidth>10);i.onerror=()=>res(false);i.src=url})}
+function probe(url,ms=6000){return new Promise(res=>{const i=new Image();const t=setTimeout(()=>{i.src='';res(false)},ms);i.referrerPolicy='no-referrer';i.onload=()=>{clearTimeout(t);res(i.naturalWidth>10)};i.onerror=()=>{clearTimeout(t);res(false)};i.src=url})}
+// 同時發出多個查詢，誰先找到就用誰；全部沒找到才回 null
+function firstFound(tasks){return new Promise(res=>{let left=tasks.length;if(!left)return res(null);
+ for(const p of tasks)p.then(v=>{if(v)res(v);else if(--left===0)res(null)},()=>{if(--left===0)res(null)})})}
 async function resolveCover(id){
  const b=S.books.find(x=>x.id===id);if(!b)return 'gone';
- const isbn=cleanIsbn(b.isbn);const au=b.author?b.author.split(/[、,，]/)[0]:'';let found=null,limited=false;
- const g=async q=>{if(limited)return null;try{return await googleLookup(q)}catch(e){if(e instanceof LimitError){limited=true;return null}throw e}};
- try{
-  if(isbn)found=await g('isbn:'+isbn);
-  if(!found&&isbn){const ol=`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`;if(await probe(ol))found={url:ol}}
-  if(!found)found=await g('intitle:'+b.title+(au?' inauthor:'+au:''));
-  if(!found&&au)found=await g(b.title);
-  if(!found){try{found=await olLookup(b.title,au)}catch(e){}}
- }catch(e){return 'error'}  // 網路問題：下次開啟再試
+ const isbn=cleanIsbn(b.isbn);const au=b.author?b.author.split(/[、,，]/)[0]:'';const title=searchTitle(b.title);
+ let limited=false,netErr=0,tries=0;
+ const wrap=p=>{tries++;return p.catch(e=>{if(e instanceof LimitError)limited=true;else netErr++;return null})};
+ const g=(q,want)=>wrap(googleLookup(q,want));
+ let found=null;
+ if(isbn)found=await firstFound([g('isbn:'+isbn),probe(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`).then(ok=>ok?{url:`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`}:null)]);
+ if(!found){
+  const tasks=[g(title+(au?' '+au:''),title)];
+  const keyed=gKey()&&!keyBad;
+  if(au&&keyed)tasks.push(g(title,title)); // 有金鑰才同時多查，免金鑰時省額度
+  if(!CJK.test(title))tasks.push(wrap(olLookup(title,au)));
+  found=await firstFound(tasks);
+  if(!found&&au&&!keyed&&!limited)found=await g(title,title);
+ }
  const cur=S.books.find(x=>x.id===id);if(!cur)return 'gone';
  if(found){cur.cover=found.url;delete cur.coverMiss;if(!cur.author&&found.authors)cur.author=[].concat(found.authors).slice(0,2).join('、');if(!cur.isbn&&found.isbn){cur.isbn=found.isbn;cur.isbnAuto=1}save(1);render();return 'ok'}
  if(limited)return 'limit';      // Google 額度用完又沒找到：之後再排一次，不記成「找不到」
+ if(netErr&&netErr>=tries)return 'error'; // 網路問題：下次開啟再試
  cur.coverMiss=Date.now();save(1);return 'miss';
 }
 document.addEventListener('error',e=>{const im=e.target;if(im.tagName!=='IMG'||!im.dataset.id)return;
@@ -235,6 +258,15 @@ $('dDelete').onclick=()=>{const btn=$('dDelete');const b=S.books.find(x=>x.id===
  if(btn.dataset.armed){S.books=S.books.filter(x=>x.id!==detailId);save();$('bookSheet').hidden=true;render();toast(`已移除《${b.title}》`)}
  else{btn.dataset.armed='1';btn.textContent='確定移除？再按一次'}};
 $('dClose').onclick=()=>$('bookSheet').hidden=true;
+// 手動換封面：貼圖片網址（例如博客來的封面），或輸入 ISBN 重新查；留空則清掉封面重新自動找
+$('dCoverBtn').onclick=async()=>{const b=S.books.find(x=>x.id===detailId);if(!b)return;
+ const v=prompt('貼上封面圖片網址（可在博客來等網站的封面上按右鍵「複製圖片網址」），\n或輸入這本書的 ISBN 重新查詢。\n留空按確定：清掉目前封面，重新自動找。',b.coverManual?b.cover:'');if(v===null)return;const t=v.trim();
+ if(/^https?:\/\//i.test(t)){const u=httpsify(t);if(!(await probe(u))){toast('這個網址打不開圖片，請換一個',true);return}
+  b.cover=u;b.coverManual=1;delete b.coverMiss;delete b.noLookup;save();render();openDetail(b.id);toast('封面已更新');return}
+ const isbn=cleanIsbn(t);if(t&&!validIsbn(isbn)){toast('請貼圖片網址，或 10／13 碼 ISBN',true);return}
+ if(isbn){b.isbn=isbn;delete b.isbnAuto}
+ delete b.cover;delete b.coverManual;delete b.coverMiss;delete b.noLookup;save();pending.delete(b.id);
+ const r=await resolveCover(b.id);render();openDetail(b.id);toast(r==='ok'?'找到封面了':r==='limit'?'查詢太頻繁，稍後會自動再找':'還是找不到，可以改貼封面圖片網址',r!=='ok')};
 $('bookSheet').onclick=e=>{if(e.target===$('bookSheet'))$('bookSheet').hidden=true};
 $('clearExamples').onclick=()=>{S.books=S.books.filter(b=>!b.ex);save();render();toast('已清除範例書')};
 $('openAdd').onclick=()=>openAdd();
