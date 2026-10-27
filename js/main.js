@@ -86,16 +86,31 @@ function needsCover(b){
  if(b.coverMiss&&(Date.now()-b.coverMiss)<COVER_RETRY_DAYS*864e5)return false;
  return true;
 }
+// 先找畫面上看得到的書：正在讀 → 即將閱讀 → 各層前幾本 → 其他
+const PRI={reading:0,want:1,wish:2,done:3};
 function enqueueCovers(){
- for(const b of S.books){if(needsCover(b)&&!pending.has(b.id)){pending.add(b.id);queue.push(b.id)}}
+ const seen={};const add=[];
+ for(const b of S.books){const k=b.status;seen[k]=(seen[k]||0)+1;
+  if(needsCover(b)&&!pending.has(b.id)){pending.add(b.id);add.push([seen[k]<=CAP?PRI[k]??4:5+(PRI[k]??4),b.id])}}
+ add.sort((a,b)=>a[0]-b[0]);for(const x of add)queue.push(x[1]);
  coverStatus();pump();
 }
+// 打開「看全部」時，把這一頁的書插到隊伍最前面
+function prioritize(ids){const want=new Set(ids.filter(id=>pending.has(id)));if(!want.size)return;
+ const front=queue.filter(id=>want.has(id));const rest=queue.filter(id=>!want.has(id));queue.length=0;queue.push(...front,...rest)}
+// 找到一本就只更新那一本的封面，不重畫整個書架（書多時整頁重畫會很卡）
+let saveT=0;function saveSoon(){clearTimeout(saveT);saveT=setTimeout(()=>save(1),800)}
+window.addEventListener('pagehide',()=>{if(saveT){clearTimeout(saveT);save(1)}});
+function patchBook(id){const b=S.books.find(x=>x.id===id);if(!b)return;
+ document.querySelectorAll(`.book[data-id="${id}"]`).forEach(el=>{const c=el.querySelector('.cover');if(c)c.outerHTML=cover(b);
+  const cap=el.querySelector('.cap');if(cap)cap.innerHTML=`<b>${esc(b.title)}</b>${b.author?`<span class="au">${esc(b.author)}</span>`:''}`});
+ if(detailId===id&&!$('bookSheet').hidden){$('dCover').innerHTML=cover(b);$('dAuthor').textContent=b.author||'作者未記'}}
 function maxActive(){return gKey()&&!keyBad?6:3}
 function pump(){
  const wait=pausedUntil-Date.now();if(wait>0){setTimeout(pump,wait+50);coverStatus();return}
  while(active<maxActive()&&queue.length){const id=queue.shift();active++;
-  resolveCover(id).then(r=>{if(r==='limit'){queue.push(id);pausedUntil=Date.now()+backoff;backoff=Math.min(backoff*2,60000)}else{pending.delete(id);if(r==='ok'){coverFound++;backoff=5000}if(r==='error'){coverErr++;if(coverErr>=8&&!coverFound){for(const q of queue)pending.delete(q);queue.length=0;render()}}}})
-   .catch(()=>pending.delete(id)).finally(()=>{active--;coverStatus();setTimeout(pump,100)})}
+  resolveCover(id).then(r=>{if(r==='limit'){queue.push(id);pausedUntil=Date.now()+backoff;backoff=Math.min(backoff*2,60000)}else{pending.delete(id);patchBook(id);if(r==='ok'){coverFound++;backoff=5000}if(r==='error'){coverErr++;if(coverErr>=8&&!coverFound){const q=[...queue];for(const x of q)pending.delete(x);queue.length=0;q.forEach(patchBook)}}}})
+   .catch(()=>{pending.delete(id);patchBook(id)}).finally(()=>{active--;coverStatus();setTimeout(pump,50)})}
 }
 function coverStatus(){const el=document.getElementById('coverStatus');if(!el)return;const n=queue.length+active;
  const note=keyBad?'（Google 金鑰無效，已改用免金鑰模式，請檢查金鑰）':pausedUntil>Date.now()?(gKey()?'（查詢太頻繁，稍等一下自動繼續）':'（查詢太頻繁，稍等一下自動繼續；加上 Google 金鑰會快很多）'):'';
@@ -115,9 +130,11 @@ const CJK=/[぀-ヿ㐀-鿿]/;
 function searchTitle(t){return String(t).replace(/[（(【\[][^）)】\]]*[）)】\]]/g,' ').replace(/\s+/g,' ').trim()||String(t)}
 const normT=s=>String(s||'').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
 class LimitError extends Error{}
+// 連線卡住超過 8 秒就放棄，不要佔著名額
+function tfetch(u,ms=8000){const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);return fetch(u,{signal:c.signal}).finally(()=>clearTimeout(t))}
 const GFIELDS='&fields=items(volumeInfo(title,subtitle,authors,imageLinks,industryIdentifiers))';
 async function googleLookup(q,want){
- const r=await fetch('https://www.googleapis.com/books/v1/volumes?maxResults=10&printType=books&q='+encodeURIComponent(q)+GFIELDS+gKeyParam());
+ const r=await tfetch('https://www.googleapis.com/books/v1/volumes?maxResults=10&printType=books&q='+encodeURIComponent(q)+GFIELDS+gKeyParam());
  if(r.status===400||r.status===403){
   let msg='';try{msg=JSON.stringify(await r.json())}catch(e){}
   if(gKey()&&!keyBad&&/key|referer|blocked|disabled|has not been used/i.test(msg)){keyBad=true;gKeyLabel();return googleLookup(q,want)} // 金鑰設定有問題：改用免金鑰再查
@@ -133,7 +150,7 @@ async function googleLookup(q,want){
  return {url:httpsify(v.imageLinks.thumbnail||v.imageLinks.smallThumbnail).replace('&edge=curl',''),authors:v.authors,isbn:id?id.identifier:''};
 }
 async function olLookup(title,author){
- const r=await fetch('https://openlibrary.org/search.json?limit=5&fields=cover_i,author_name,title&title='+encodeURIComponent(title)+(author?'&author='+encodeURIComponent(author):''));
+ const r=await tfetch('https://openlibrary.org/search.json?limit=5&fields=cover_i,author_name,title&title='+encodeURIComponent(title)+(author?'&author='+encodeURIComponent(author):''));
  if(!r.ok)throw new Error('openlibrary '+r.status);
  const j=await r.json();const d=(j.docs||[]).find(x=>x.cover_i);
  return d?{url:`https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg`,authors:d.author_name}:null;
@@ -159,13 +176,13 @@ async function resolveCover(id){
   if(!found&&au&&!keyed&&!limited)found=await g(title,title);
  }
  const cur=S.books.find(x=>x.id===id);if(!cur)return 'gone';
- if(found){cur.cover=found.url;delete cur.coverMiss;if(!cur.author&&found.authors)cur.author=[].concat(found.authors).slice(0,2).join('、');if(!cur.isbn&&found.isbn){cur.isbn=found.isbn;cur.isbnAuto=1}save(1);render();return 'ok'}
+ if(found){cur.cover=found.url;delete cur.coverMiss;if(!cur.author&&found.authors)cur.author=[].concat(found.authors).slice(0,2).join('、');if(!cur.isbn&&found.isbn){cur.isbn=found.isbn;cur.isbnAuto=1}saveSoon();return 'ok'}
  if(limited)return 'limit';      // Google 額度用完又沒找到：之後再排一次，不記成「找不到」
  if(netErr&&netErr>=tries)return 'error'; // 網路問題：下次開啟再試
- cur.coverMiss=Date.now();save(1);return 'miss';
+ cur.coverMiss=Date.now();saveSoon();return 'miss';
 }
 document.addEventListener('error',e=>{const im=e.target;if(im.tagName!=='IMG'||!im.dataset.id)return;
- const b=S.books.find(x=>x.id===im.dataset.id);if(b&&b.cover){if(!b.coverManual){delete b.cover;b.coverMiss=Date.now();save(1)}const c=im.closest('.cover');c.classList.remove('real');c.classList.add('blank');im.remove()}},true);
+ const b=S.books.find(x=>x.id===im.dataset.id);if(b&&b.cover){if(!b.coverManual){delete b.cover;b.coverMiss=Date.now();saveSoon()}const c=im.closest('.cover');c.classList.remove('real');c.classList.add('blank');im.remove()}},true);
 function bookEl(b){return `<button class="book" data-id="${b.id}">${cover(b)}<span class="cap"><b>${esc(b.title)}</b>${b.author?`<span class="au">${esc(b.author)}</span>`:''}</span></button>`}
 function shelfHTML(sh){
  const q=query.toLowerCase();
@@ -220,7 +237,7 @@ function renderList(){
  ${view==='wish'?isbnFormHTML():''}<div class="catbar" style="margin-bottom:18px">${catBarHTML(view)}</div>
  <div class="sec-h"><h2>${sh.title}<small class="num">${list.length} 本${q?'（搜尋結果）':''}</small></h2>
  <select class="lv-sort" id="lvSort" aria-label="排序"><option value="added"${listSort==='added'?' selected':''}>書單順序</option><option value="newest"${listSort==='newest'?' selected':''}>最近加入</option><option value="title"${listSort==='title'?' selected':''}>依書名</option><option value="stars"${listSort==='stars'?' selected':''}>依星等</option></select></div>
- <div class="row grid">${list.map(bookEl).join('')}${!q?`<button class="empty-card" data-addto="${sh.k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>添一本</button>`:''}</div>${q&&!list.length?'<p class="nores">這一層找不到符合的書</p>':''}`;
+ <div class="row grid">${(prioritize(list.map(b=>b.id)),list.map(bookEl).join(''))}${!q?`<button class="empty-card" data-addto="${sh.k}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>添一本</button>`:''}</div>${q&&!list.length?'<p class="nores">這一層找不到符合的書</p>':''}`;
 }
 function route(){
  const h=location.hash.slice(1);const was=view;
