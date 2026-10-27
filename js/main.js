@@ -61,7 +61,7 @@ function mergeDiary(list){let added=0,noted=0;const nk=t=>String(t).toLowerCase(
   if(st&&!b.stars)b.stars=st}
  return {added,noted}}
 // 套用自己拍的封面：書名比對（忽略空白標點），自己貼的封面不覆蓋
-function applyMyCovers(){const nk=t=>String(t).toLowerCase().replace(/[\s《》<>「」『』（）()\-—–_.,，、:：;；!！?？·．'"“”~～]/g,'');
+function applyMyCovers(){if(typeof MY_COVERS==='undefined')return 0;const nk=t=>String(t).toLowerCase().replace(/[\s《》<>「」『』（）()\-—–_.,，、:：;；!！?？·．'"“”~～]/g,'');
  const ents=Object.entries(MY_COVERS).map(([t,u])=>[nk(t),u]);let n=0;
  for(const b of S.books){if(b.coverManual)continue;const k=nk(b.title);if(!k)continue;
   let hit=ents.find(e=>e[0]===k);if(!hit){const c=ents.filter(e=>e[0].length>=3&&(k.includes(e[0])||e[0].includes(k)&&k.length>=3));if(c.length===1)hit=c[0]}
