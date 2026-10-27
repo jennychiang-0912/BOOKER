@@ -130,7 +130,7 @@ function coverStatus(){const el=document.getElementById('coverStatus');if(!el)re
 const GKEY='my-bookshelf-gkey';
 function gKey(){try{return localStorage.getItem(GKEY)||''}catch(e){return ''}}
 function gKeyParam(){const k=gKey();return k&&!keyBad?'&key='+encodeURIComponent(k):''}
-function gKeyLabel(){$('gkeyBtn').textContent=gKey()?(keyBad?'Google 金鑰 ✗':'Google 金鑰 ✓'):'加 Google 金鑰'}
+function gKeyLabel(){if(!$('gkeyBtn'))return;$('gkeyBtn').textContent=gKey()?(keyBad?'Google 金鑰 ✗':'Google 金鑰 ✓'):'加 Google 金鑰'}
 function setGKey(){const v=prompt('貼上 Google Books API 金鑰（只存在這個瀏覽器）。\n清空後按確定可以刪除金鑰。',gKey());if(v===null)return;
  try{v.trim()?localStorage.setItem(GKEY,v.trim()):localStorage.removeItem(GKEY)}catch(e){}
  pausedUntil=0;backoff=5000;coverErr=0;keyBad=false;gKeyLabel();
