@@ -60,6 +60,15 @@ function mergeDiary(list){let added=0,noted=0;const nk=t=>String(t).toLowerCase(
   if(wip){if(b.status!=='done')b.status='reading'}else{if(b.status!=='done'||!b.finished)b.finished=d;b.status='done'}
   if(st&&!b.stars)b.stars=st}
  return {added,noted}}
+// 套用自己拍的封面：書名比對（忽略空白標點），自己貼的封面不覆蓋
+function applyMyCovers(){const nk=t=>String(t).toLowerCase().replace(/[\s《》<>「」『』（）()\-—–_.,，、:：;；!！?？·．'"“”~～]/g,'');
+ const ents=Object.entries(MY_COVERS).map(([t,u])=>[nk(t),u]);let n=0;
+ for(const b of S.books){if(b.coverManual)continue;const k=nk(b.title);if(!k)continue;
+  let hit=ents.find(e=>e[0]===k);if(!hit){const c=ents.filter(e=>e[0].length>=3&&(k.includes(e[0])||e[0].includes(k)&&k.length>=3));if(c.length===1)hit=c[0]}
+  if(hit&&b.cover!==hit[1]){b.cover=hit[1];b.coverMine=1;n++}}
+ return n}
+if(!S.myCovers1){for(const b of S.books)if(!b.coverManual){delete b.cover;delete b.coverMiss}S.myCovers1=1;save(1)} // 清掉以前自動找到的封面
+if(applyMyCovers())save(1);
 if(!S.coverReset1){for(const b of S.books)delete b.coverMiss;S.coverReset1=1;save(1)} // 舊版或匯入的備份可能把書標成「找不到」，更新後全部重找一次
 function save(quiet){const cur=JSON.stringify(S);if(!quiet&&lastSaved!==null&&lastSaved!==cur){undoStack.push(lastSaved);if(undoStack.length>30)undoStack.shift()}if(lastSaved!==null)lastSaved=cur;try{localStorage.setItem(KEY,cur)}catch(e){}}
 function undo(){if(!undoStack.length){toast('沒有可以復原的動作',true);return}const prev=undoStack.pop();S=JSON.parse(prev);lastSaved=prev;try{localStorage.setItem(KEY,prev)}catch(e){}
@@ -81,7 +90,9 @@ function cover(b){
 /* ---------- 自動找封面 ---------- */
 // 加速重點：同時查多本、一本書的多個來源同時發出、書名先去掉（英）（漫畫）等標記；中文書不查 Open Library（幾乎沒有中文封面）。
 const pending=new Set();const queue=[];let active=0,pausedUntil=0,backoff=5000,coverFound=0,coverErr=0,keyBad=false;
+const AUTO_COVER=false; // 統一用自己的封面，不再自動上網找
 function needsCover(b){
+ if(!AUTO_COVER)return false;
  if(b.cover||b.coverManual||b.noLookup||b.cat==='影音')return false;
  if(b.coverMiss&&(Date.now()-b.coverMiss)<COVER_RETRY_DAYS*864e5)return false;
  return true;
@@ -275,15 +286,13 @@ $('dDelete').onclick=()=>{const btn=$('dDelete');const b=S.books.find(x=>x.id===
  if(btn.dataset.armed){S.books=S.books.filter(x=>x.id!==detailId);save();$('bookSheet').hidden=true;render();toast(`已移除《${b.title}》`)}
  else{btn.dataset.armed='1';btn.textContent='確定移除？再按一次'}};
 $('dClose').onclick=()=>$('bookSheet').hidden=true;
-// 手動換封面：貼圖片網址（例如博客來的封面），或輸入 ISBN 重新查；留空則清掉封面重新自動找
+// 手動換封面：貼圖片網址；留空則清掉（有自己拍的封面就換回那張）
 $('dCoverBtn').onclick=async()=>{const b=S.books.find(x=>x.id===detailId);if(!b)return;
- const v=prompt('貼上封面圖片網址（可在博客來等網站的封面上按右鍵「複製圖片網址」），\n或輸入這本書的 ISBN 重新查詢。\n留空按確定：清掉目前封面，重新自動找。',b.coverManual?b.cover:'');if(v===null)return;const t=v.trim();
+ const v=prompt('貼上封面圖片網址（可在博客來等網站的封面上按右鍵「複製圖片網址」）。\n留空按確定：清掉目前封面。',b.coverManual?b.cover:'');if(v===null)return;const t=v.trim();
  if(/^https?:\/\//i.test(t)){const u=httpsify(t);if(!(await probe(u))){toast('這個網址打不開圖片，請換一個',true);return}
-  b.cover=u;b.coverManual=1;delete b.coverMiss;delete b.noLookup;save();render();openDetail(b.id);toast('封面已更新');return}
- const isbn=cleanIsbn(t);if(t&&!validIsbn(isbn)){toast('請貼圖片網址，或 10／13 碼 ISBN',true);return}
- if(isbn){b.isbn=isbn;delete b.isbnAuto}
- delete b.cover;delete b.coverManual;delete b.coverMiss;delete b.noLookup;save();pending.delete(b.id);
- const r=await resolveCover(b.id);render();openDetail(b.id);toast(r==='ok'?'找到封面了':r==='limit'?'查詢太頻繁，稍後會自動再找':'還是找不到，可以改貼封面圖片網址',r!=='ok')};
+  b.cover=u;b.coverManual=1;delete b.coverMine;save();render();openDetail(b.id);toast('封面已更新');return}
+ if(t){toast('請貼圖片網址（https:// 開頭）',true);return}
+ delete b.cover;delete b.coverManual;delete b.coverMine;applyMyCovers();save();render();openDetail(b.id);toast(b.cover?'已換回自己拍的封面':'已清掉封面')};
 $('bookSheet').onclick=e=>{if(e.target===$('bookSheet'))$('bookSheet').hidden=true};
 $('clearExamples').onclick=()=>{S.books=S.books.filter(b=>!b.ex);save();render();toast('已清除範例書')};
 $('openAdd').onclick=()=>openAdd();
@@ -291,7 +300,7 @@ $('cancelAdd').onclick=()=>$('addSheet').hidden=true;
 $('addSheet').onclick=e=>{if(e.target===$('addSheet'))$('addSheet').hidden=true};
 $('addForm').onsubmit=e=>{e.preventDefault();const title=$('fTitle').value.trim();if(!title)return;const status=$('fStatus').value;
  S.books.unshift({id:uid(),title,author:$('fAuthor').value.trim(),isbn:cleanIsbn($('fIsbn').value),status,cat:$('fCat').value,added:today(),finished:status==='done'?today():null});
- const nb=S.books[0];save();e.target.reset();$('addSheet').hidden=true;render();if(status==='done')openRate(nb.id);enqueueCovers();toast(`《${title}》已放上書架`)};
+ const nb=S.books[0];applyMyCovers();save();e.target.reset();$('addSheet').hidden=true;render();if(status==='done')openRate(nb.id);enqueueCovers();toast(`《${title}》已放上書架`)};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('addSheet').hidden=true;$('bookSheet').hidden=true;closeMenu()}});
 document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){e.preventDefault();undo()}});
 $('burger').onclick=()=>{const o=$('nav').classList.toggle('open');$('burger').setAttribute('aria-expanded',o)};
@@ -299,9 +308,9 @@ $('links').onclick=e=>{const a=e.target.closest('a');if(!a)return;document.query
 $('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(S,null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`我的書櫃備份-${today()}.json`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);toast('已匯出備份')};
 $('importBtn').onclick=()=>$('importFile').click();
 $('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());
- if(Array.isArray(d.diary)){const r=mergeDiary(d.diary);save();render();enqueueCovers();toast(`已匯入 ${r.noted} 則讀書筆記${r.added?`，新增 ${r.added} 本書`:''}`);e.target.value='';return}
+ if(Array.isArray(d.diary)){const r=mergeDiary(d.diary);applyMyCovers();save();render();enqueueCovers();toast(`已匯入 ${r.noted} 則讀書筆記${r.added?`，新增 ${r.added} 本書`:''}`);e.target.value='';return}
  if(!Array.isArray(d.books))throw 0;
- d.checkins=d.checkins||[];d.pages=d.pages||{};S=d;save();render();enqueueCovers();toast(`已匯入 ${d.books.length} 本書`)}catch(err){toast('這個檔案不是書櫃備份，請選匯出的 .json 檔')}e.target.value=''};
+ d.checkins=d.checkins||[];d.pages=d.pages||{};S=d;applyMyCovers();save();render();enqueueCovers();toast(`已匯入 ${d.books.length} 本書`)}catch(err){toast('這個檔案不是書櫃備份，請選匯出的 .json 檔')}e.target.value=''};
 {const o=CATS.map(c=>`<option value="${c}">${c}</option>`).join('');$('fCat').innerHTML=o;$('fCat').value='文學小說'}
 
 /* ---------- 星等與筆記 ---------- */
@@ -383,10 +392,9 @@ document.addEventListener('submit',async e=>{const f=e.target.closest('[data-isb
  const info=await lookupIsbn(isbn);
  btn.disabled=false;btn.textContent='加入';
  const b={id:uid(),title:info?info.title:'ISBN '+isbn,author:info?info.author:'',isbn,cat:(info&&info.cat)||'其他',status:'wish',added:today(),finished:null};
- if(info&&info.cover)b.cover=info.cover;
  S.books.unshift(b);save();render();if(typeof enqueueCovers==='function')enqueueCovers();
  toast(info?`《${b.title}》已加入願望書單`:`查不到這個 ISBN 的書名，先用 ISBN 加入願望書單`);
  const again=document.querySelector('[data-isbnform] input');if(again)again.focus()});
 lastSaved=JSON.stringify(S);
-gKeyLabel();$('gkeyBtn').onclick=setGKey;
+
 route();enqueueCovers();
